@@ -51,6 +51,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📋 *Commands*\n\n"
+        "*Life Goals \\(5/10/15y\\):*\n"
+        "/lifegoals — View 5/10/15y life goals\n"
+        "/addlife 5|10|15 \\<text\\> — Add a life goal\n"
+        "/achievelife \\<id\\> — Mark life goal as achieved\n"
+        "/dellife \\<id\\> — Delete a life goal\n\n"
         "*Goals:*\n"
         "/addgoal short|long \\<text\\> — Add a goal\n"
         "/goals — List all goals\n"
@@ -63,6 +68,83 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "_You'll get a reminder 30 min before each appointment\\._",
         parse_mode="MarkdownV2",
     )
+
+
+HORIZON_LABELS = {
+    5: "5 Years — 2030 (you'll be 45)",
+    10: "10 Years — 2035 (you'll be 50)",
+    15: "15 Years — 2040 (you'll be 55)",
+}
+
+
+@authorized
+async def list_life_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    goals = db.get_life_goals()
+    if not goals:
+        await update.message.reply_text("No life goals yet. Add one with /addlife 5|10|15 <text>")
+        return
+
+    lines = ["🌟 *Life Goals*\n"]
+    for horizon in (5, 10, 15):
+        horizon_goals = [g for g in goals if g["horizon"] == horizon]
+        if not horizon_goals:
+            continue
+        lines.append(f"*{HORIZON_LABELS[horizon]}*")
+        active = [g for g in horizon_goals if not g["achieved"]]
+        done = [g for g in horizon_goals if g["achieved"]]
+        for g in active:
+            lines.append(f"  #{g['id']} {g['text']}")
+        for g in done:
+            lines.append(f"  ✓ #{g['id']} ~~{g['text']}~~")
+        lines.append("")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+@authorized
+async def add_life_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 2 or args[0] not in ("5", "10", "15"):
+        await update.message.reply_text("Usage: /addlife 5|10|15 <text>")
+        return
+    horizon = int(args[0])
+    text = " ".join(args[1:])
+    goal_id = db.add_life_goal(horizon, text)
+    await update.message.reply_text(
+        f"🌟 Life goal #{goal_id} added ({horizon}y horizon):\n{text}"
+    )
+
+
+@authorized
+async def achieve_life_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /achievelife <id>")
+        return
+    try:
+        goal_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Please provide a valid goal ID.")
+        return
+    if db.mark_life_goal_achieved(goal_id):
+        await update.message.reply_text(f"🏆 Life goal #{goal_id} marked as achieved!")
+    else:
+        await update.message.reply_text(f"Life goal #{goal_id} not found or already achieved.")
+
+
+@authorized
+async def delete_life_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /dellife <id>")
+        return
+    try:
+        goal_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Please provide a valid goal ID.")
+        return
+    if db.delete_life_goal(goal_id):
+        await update.message.reply_text(f"🗑️ Life goal #{goal_id} deleted.")
+    else:
+        await update.message.reply_text(f"Life goal #{goal_id} not found.")
 
 
 @authorized
@@ -236,6 +318,7 @@ async def send_reminder(bot: Bot, user_id: int, title: str, dt: datetime):
 # --- Startup: reschedule pending appointments ---
 
 async def post_init(application: Application):
+    db.seed_life_goals()
     scheduler.start()
     appts = db.get_upcoming_appointments()
     rescheduled = 0
@@ -267,6 +350,10 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("lifegoals", list_life_goals))
+    app.add_handler(CommandHandler("addlife", add_life_goal))
+    app.add_handler(CommandHandler("achievelife", achieve_life_goal))
+    app.add_handler(CommandHandler("dellife", delete_life_goal))
     app.add_handler(CommandHandler("addgoal", add_goal))
     app.add_handler(CommandHandler("goals", list_goals))
     app.add_handler(CommandHandler("done", mark_done))
