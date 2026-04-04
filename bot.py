@@ -1,7 +1,11 @@
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
 from functools import wraps
+
+# Python 3.14 requires an explicit event loop
+asyncio.set_event_loop(asyncio.new_event_loop())
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
@@ -52,16 +56,17 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📋 *Commands*\n\n"
         "*Goals:*\n"
-        "/addgoal short|long \\<text\\> — Add a goal\n"
+        "/addgoal short <text> — Add short-term goal\n"
+        "/addgoal long <text> — Add long-term goal\n"
         "/goals — List all goals\n"
-        "/done \\<id\\> — Mark goal as done\n"
-        "/delgoal \\<id\\> — Delete a goal\n\n"
+        "/done <id> — Mark goal as done\n"
+        "/delgoal <id> — Delete a goal\n\n"
         "*Appointments:*\n"
-        "/addappt DD/MM/YYYY HH:MM \\<title\\> — Add appointment\n"
+        "/addappt DD/MM/YYYY HH:MM <title> — Add appointment\n"
         "/appts — List upcoming appointments\n"
-        "/delappt \\<id\\> — Delete an appointment\n\n"
-        "_You'll get a reminder 30 min before each appointment\\._",
-        parse_mode="MarkdownV2",
+        "/delappt <id> — Delete an appointment\n\n"
+        "_You'll get a reminder 30 min before each appointment._",
+        parse_mode="Markdown",
     )
 
 
