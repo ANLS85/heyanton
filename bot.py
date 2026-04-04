@@ -22,8 +22,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-AUTHORIZED_USER_ID = int(os.environ["AUTHORIZED_USER_ID"])
+print("ENV KEYS:", list(os.environ.keys()), flush=True)
+
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+AUTHORIZED_USER_ID = os.environ.get("AUTHORIZED_USER_ID")
+
+if not BOT_TOKEN:
+    raise RuntimeError(f"TELEGRAM_BOT_TOKEN not found. Available keys: {list(os.environ.keys())}")
+if not AUTHORIZED_USER_ID:
+    raise RuntimeError(f"AUTHORIZED_USER_ID not found. Available keys: {list(os.environ.keys())}")
+
+AUTHORIZED_USER_ID = int(AUTHORIZED_USER_ID)
 
 db = Database()
 scheduler = AsyncIOScheduler()
