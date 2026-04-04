@@ -57,7 +57,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/achievelife \\<id\\> — Mark life goal as achieved\n"
         "/dellife \\<id\\> — Delete a life goal\n\n"
         "*Goals:*\n"
-        "/addgoal short|long \\<text\\> — Add a goal\n"
+        "/addshort \\<text\\> — Add a short\\-term goal\n"
+        "/addlong \\<text\\> — Add a long\\-term goal\n"
         "/goals — List all goals\n"
         "/setdue \\<id\\> DD/MM/YYYY — Set a deadline on a goal\n"
         "/done \\<id\\> — Mark goal as done\n"
@@ -160,6 +161,26 @@ async def add_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ Goal #{goal_id} added ({goal_type}-term):\n{text}"
     )
+
+
+@authorized
+async def add_short_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /addshort <text>")
+        return
+    text = " ".join(context.args)
+    goal_id = db.add_goal("short", text)
+    await update.message.reply_text(f"✅ Short-term goal #{goal_id} added:\n{text}")
+
+
+@authorized
+async def add_long_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /addlong <text>")
+        return
+    text = " ".join(context.args)
+    goal_id = db.add_goal("long", text)
+    await update.message.reply_text(f"✅ Long-term goal #{goal_id} added:\n{text}")
 
 
 def _format_due(g: dict) -> str:
@@ -397,6 +418,8 @@ def main():
     app.add_handler(CommandHandler("achievelife", achieve_life_goal))
     app.add_handler(CommandHandler("dellife", delete_life_goal))
     app.add_handler(CommandHandler("addgoal", add_goal))
+    app.add_handler(CommandHandler("addshort", add_short_goal))
+    app.add_handler(CommandHandler("addlong", add_long_goal))
     app.add_handler(CommandHandler("goals", list_goals))
     app.add_handler(CommandHandler("setdue", set_due))
     app.add_handler(CommandHandler("done", mark_done))
