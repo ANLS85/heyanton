@@ -59,6 +59,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Goals:*\n"
         "/addgoal short|long \\<text\\> — Add a goal\n"
         "/goals — List all goals\n"
+        "/setdue \\<id\\> DD/MM/YYYY — Set a deadline on a goal\n"
         "/done \\<id\\> — Mark goal as done\n"
         "/delgoal \\<id\\> — Delete a goal\n\n"
         "*Appointments:*\n"
@@ -161,6 +162,22 @@ async def add_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _format_due(g: dict) -> str:
+    if not g.get("due_date"):
+        return ""
+    due = datetime.strptime(g["due_date"], "%Y-%m-%d").date()
+    today = datetime.now().date()
+    delta = (due - today).days
+    label = due.strftime("%-d %b")
+    if delta < 0:
+        return f" ⚠️ overdue ({label})"
+    if delta == 0:
+        return f" ⏰ due today"
+    if delta <= 7:
+        return f" ⏳ {delta}d left ({label})"
+    return f" 📅 by {label}"
+
+
 @authorized
 async def list_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     goals = db.get_goals()
@@ -176,12 +193,12 @@ async def list_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if short_goals:
         lines.append("*Short-term:*")
         for g in short_goals:
-            lines.append(f"  #{g['id']} {g['text']}")
+            lines.append(f"  #{g['id']} {g['text']}{_format_due(g)}")
         lines.append("")
     if long_goals:
         lines.append("*Long-term:*")
         for g in long_goals:
-            lines.append(f"  #{g['id']} {g['text']}")
+            lines.append(f"  #{g['id']} {g['text']}{_format_due(g)}")
         lines.append("")
     if done_goals:
         lines.append("*Completed:*")
@@ -189,6 +206,30 @@ async def list_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"  ✓ #{g['id']} {g['text']}")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+@authorized
+async def set_due(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) != 2:
+        await update.message.reply_text("Usage: /setdue <id> DD/MM/YYYY")
+        return
+    try:
+        goal_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("Please provide a valid goal ID.")
+        return
+    try:
+        due = datetime.strptime(args[1], "%d/%m/%Y").date()
+    except ValueError:
+        await update.message.reply_text("Invalid date. Use DD/MM/YYYY e.g. 30/06/2025")
+        return
+    if db.set_goal_due_date(goal_id, due.isoformat()):
+        await update.message.reply_text(
+            f"📅 Due date set for goal #{goal_id}: {due.strftime('%-d %b %Y')}"
+        )
+    else:
+        await update.message.reply_text(f"Goal #{goal_id} not found.")
 
 
 @authorized
@@ -319,6 +360,7 @@ async def send_reminder(bot: Bot, user_id: int, title: str, dt: datetime):
 
 async def post_init(application: Application):
     db.seed_life_goals()
+    db.seed_short_term_goals()
     scheduler.start()
     appts = db.get_upcoming_appointments()
     rescheduled = 0
@@ -356,6 +398,7 @@ def main():
     app.add_handler(CommandHandler("dellife", delete_life_goal))
     app.add_handler(CommandHandler("addgoal", add_goal))
     app.add_handler(CommandHandler("goals", list_goals))
+    app.add_handler(CommandHandler("setdue", set_due))
     app.add_handler(CommandHandler("done", mark_done))
     app.add_handler(CommandHandler("delgoal", delete_goal))
     app.add_handler(CommandHandler("addappt", add_appointment))

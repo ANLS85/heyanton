@@ -1,6 +1,6 @@
 import sqlite3
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 import os
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.db")
@@ -43,6 +43,11 @@ class Database:
                     created_at TEXT DEFAULT (datetime('now'))
                 )
             """)
+            # Migration: add due_date to goals if not present
+            try:
+                conn.execute("ALTER TABLE goals ADD COLUMN due_date TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     # --- Goals ---
 
@@ -52,6 +57,13 @@ class Database:
                 "INSERT INTO goals (type, text) VALUES (?, ?)", (goal_type, text)
             )
             return cur.lastrowid
+
+    def set_goal_due_date(self, goal_id: int, due_date: Optional[str]) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE goals SET due_date = ? WHERE id = ?", (due_date, goal_id)
+            )
+            return cur.rowcount > 0
 
     def get_goals(self) -> List[Dict]:
         with self._connect() as conn:
@@ -71,6 +83,19 @@ class Database:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM goals WHERE id = ?", (goal_id,))
             return cur.rowcount > 0
+
+    SHORT_TERM_GOALS_SEED = [
+        ("short", "Sell 20 shirts/month consistently — RYSY milestone"),
+    ]
+
+    def seed_short_term_goals(self) -> None:
+        with self._connect() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM goals WHERE type = 'short'").fetchone()[0]
+            if count == 0:
+                conn.executemany(
+                    "INSERT INTO goals (type, text) VALUES (?, ?)",
+                    self.SHORT_TERM_GOALS_SEED,
+                )
 
     # --- Life Goals ---
 
