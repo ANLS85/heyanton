@@ -10,6 +10,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from database import Database
 
+DEFAULT_SUMMARY_TIME = "09:00"
+
 load_dotenv()
 
 logging.basicConfig(
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 AUTHORIZED_USER_ID = int(os.environ["AUTHORIZED_USER_ID"])
+DAILY_SUMMARY_TIME = os.environ.get("DAILY_SUMMARY_TIME", DEFAULT_SUMMARY_TIME)
 
 db = Database()
 scheduler = AsyncIOScheduler()
@@ -49,6 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @authorized
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    summary_time = db.get_setting("summary_time", DAILY_SUMMARY_TIME)
     await update.message.reply_text(
         "📋 *Commands*\n\n"
         "*Goals:*\n"
@@ -60,6 +64,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/addappt DD/MM/YYYY HH:MM \\<title\\> — Add appointment\n"
         "/appts — List upcoming appointments\n"
         "/delappt \\<id\\> — Delete an appointment\n\n"
+        "*Daily Summary:*\n"
+        f"/summary — Send summary now\n"
+        f"/setsummary HH:MM — Change daily summary time \\(currently {summary_time}\\)\n\n"
         "_You'll get a reminder 30 min before each appointment\\._",
         parse_mode="MarkdownV2",
     )
@@ -223,6 +230,97 @@ async def delete_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(f"Appointment #{appt_id} not found.")
 
 
+@authorized
+async def set_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        current = db.get_setting("summary_time", DAILY_SUMMARY_TIME)
+        await update.message.reply_text(
+            f"Daily summary is currently sent at *{current}*.\n"
+            "Use /setsummary HH:MM to change it.",
+            parse_mode="Markdown",
+        )
+        return
+    time_str = context.args[0]
+    try:
+        hour, minute = [int(x) for x in time_str.split(":")]
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError
+    except (ValueError, AttributeError):
+        await update.message.reply_text("Invalid time. Use HH:MM format, e.g. 08:30")
+        return
+
+    db.set_setting("summary_time", f"{hour:02d}:{minute:02d}")
+    _schedule_daily_summary(context.bot, hour, minute)
+    await update.message.reply_text(
+        f"✅ Daily summary will now be sent at *{hour:02d}:{minute:02d}* every day.",
+        parse_mode="Markdown",
+    )
+
+
+@authorized
+async def trigger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_daily_summary(context.bot)
+
+
+# --- Daily summary ---
+
+async def send_daily_summary(bot: Bot):
+    now = datetime.now()
+    week_end = now + timedelta(days=7)
+
+    goals = db.get_goals()
+    short_goals = [g for g in goals if g["type"] == "short" and not g["done"]]
+    long_goals = [g for g in goals if g["type"] == "long" and not g["done"]]
+    appts = db.get_appointments_in_range(now, week_end)
+
+    lines = [f"☀️ *Good morning, Anton!* — {now.strftime('%A, %d %B %Y')}\n"]
+
+    if short_goals or long_goals:
+        lines.append("🎯 *Active Goals*")
+        if short_goals:
+            lines.append("_Short-term:_")
+            for g in short_goals:
+                lines.append(f"  • {g['text']}")
+        if long_goals:
+            lines.append("_Long-term:_")
+            for g in long_goals:
+                lines.append(f"  • {g['text']}")
+    else:
+        lines.append("🎯 No active goals — add some with /addgoal!")
+
+    lines.append("")
+
+    if appts:
+        lines.append("📅 *Upcoming (next 7 days)*")
+        for a in appts:
+            dt = datetime.fromisoformat(a["datetime"])
+            lines.append(f"  • {dt.strftime('%d/%m %H:%M')} — {a['title']}")
+    else:
+        lines.append("📅 No upcoming appointments this week.")
+
+    await bot.send_message(
+        chat_id=AUTHORIZED_USER_ID,
+        text="\n".join(lines),
+        parse_mode="Markdown",
+    )
+
+
+def _schedule_daily_summary(bot: Bot, hour: int, minute: int):
+    job_id = "daily_summary"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+    scheduler.add_job(
+        send_daily_summary,
+        "cron",
+        hour=hour,
+        minute=minute,
+        args=[bot],
+        id=job_id,
+        replace_existing=True,
+    )
+    logger.info(f"Daily summary scheduled at {hour:02d}:{minute:02d}.")
+
+
 # --- Reminder job ---
 
 async def send_reminder(bot: Bot, user_id: int, title: str, dt: datetime):
@@ -254,6 +352,10 @@ async def post_init(application: Application):
             rescheduled += 1
     logger.info(f"Rescheduled {rescheduled} upcoming reminder(s).")
 
+    summary_time = db.get_setting("summary_time", DAILY_SUMMARY_TIME)
+    hour, minute = [int(x) for x in summary_time.split(":")]
+    _schedule_daily_summary(application.bot, hour, minute)
+
 
 # --- Main ---
 
@@ -274,6 +376,8 @@ def main():
     app.add_handler(CommandHandler("addappt", add_appointment))
     app.add_handler(CommandHandler("appts", list_appointments))
     app.add_handler(CommandHandler("delappt", delete_appointment))
+    app.add_handler(CommandHandler("summary", trigger_summary))
+    app.add_handler(CommandHandler("setsummary", set_summary))
 
     logger.info("Bot starting...")
     app.run_polling(drop_pending_updates=True)

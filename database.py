@@ -34,6 +34,12 @@ class Database:
                     created_at TEXT DEFAULT (datetime('now'))
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
 
     # --- Goals ---
 
@@ -85,3 +91,27 @@ class Database:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM appointments WHERE id = ?", (appt_id,))
             return cur.rowcount > 0
+
+    def get_appointments_in_range(self, start: datetime, end: datetime) -> List[Dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM appointments WHERE datetime >= ? AND datetime <= ? ORDER BY datetime",
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # --- Settings ---
+
+    def get_setting(self, key: str, default: str = None) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
+            return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
