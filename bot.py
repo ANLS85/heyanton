@@ -5,7 +5,7 @@ from functools import wraps
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
-from telegram import Bot, Update
+from telegram import Bot, BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from database import Database
@@ -417,6 +417,21 @@ async def post_init(application: Application):
     summary_time = db.get_setting("summary_time", DAILY_SUMMARY_TIME)
     hour, minute = [int(x) for x in summary_time.split(":")]
     _schedule_daily_summary(application.bot, hour, minute)
+
+    await application.bot.set_my_commands([
+        BotCommand("goals",      "List short & long-term goals"),
+        BotCommand("vision",     "Show 5/10/15-year vision"),
+        BotCommand("addgoal",    "Add a goal — short|long|5y|10y|15y <text>"),
+        BotCommand("done",       "Mark goal as done — <id>"),
+        BotCommand("delgoal",    "Delete a goal — <id>"),
+        BotCommand("appts",      "List upcoming appointments"),
+        BotCommand("addappt",    "Add appointment — DD/MM/YYYY HH:MM <title>"),
+        BotCommand("delappt",    "Delete an appointment — <id>"),
+        BotCommand("summary",    "Send today's summary now"),
+        BotCommand("setsummary", "Change daily summary time — HH:MM"),
+        BotCommand("help",       "Show all commands"),
+    ])
+    logger.info("Bot commands menu registered.")
 
 
 # --- Main ---
