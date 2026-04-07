@@ -55,23 +55,23 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary_time = db.get_setting("summary_time", DAILY_SUMMARY_TIME)
     await update.message.reply_text(
         "📋 *Commands*\n\n"
-        "*Goals \\(daily\\):*\n"
-        "/addgoal short|long \\<text\\> — Add a goal\n"
+        "*Goals (daily):*\n"
+        "/addgoal short|long <text> — Add a goal\n"
         "/goals — List all goals\n"
-        "/done \\<id\\> — Mark goal as done\n"
-        "/delgoal \\<id\\> — Delete a goal\n\n"
-        "*Vision \\(5/10/15y\\):*\n"
-        "/addgoal 5y|10y|15y \\<text\\> — Add a vision goal\n"
+        "/done <id> — Mark goal as done\n"
+        "/delgoal <id> — Delete a goal\n\n"
+        "*Vision (5/10/15y):*\n"
+        "/addgoal 5y|10y|15y <text> — Add a vision goal\n"
         "/vision — Show 5/10/15y vision\n\n"
         "*Appointments:*\n"
-        "/addappt DD/MM/YYYY HH:MM \\<title\\> — Add appointment\n"
+        "/addappt DD/MM/YYYY HH:MM <title> — Add appointment\n"
         "/appts — List upcoming appointments\n"
-        "/delappt \\<id\\> — Delete an appointment\n\n"
+        "/delappt <id> — Delete an appointment\n\n"
         "*Daily Summary:*\n"
         "/summary — Send summary now\n"
-        f"/setsummary HH:MM — Change daily summary time \\(currently {summary_time}\\)\n\n"
-        "_You'll get a reminder 30 min before each appointment\\._",
-        parse_mode="MarkdownV2",
+        f"/setsummary HH:MM — Change daily summary time (currently {summary_time})\n\n"
+        "_You'll get a reminder 30 min before each appointment._",
+        parse_mode="Markdown",
     )
 
 
