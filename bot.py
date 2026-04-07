@@ -55,47 +55,67 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary_time = db.get_setting("summary_time", DAILY_SUMMARY_TIME)
     await update.message.reply_text(
         "📋 *Commands*\n\n"
-        "*Goals:*\n"
+        "*Goals \\(daily\\):*\n"
         "/addgoal short|long \\<text\\> — Add a goal\n"
         "/goals — List all goals\n"
         "/done \\<id\\> — Mark goal as done\n"
         "/delgoal \\<id\\> — Delete a goal\n\n"
+        "*Vision \\(5/10/15y\\):*\n"
+        "/addgoal 5y|10y|15y \\<text\\> — Add a vision goal\n"
+        "/vision — Show 5/10/15y vision\n\n"
         "*Appointments:*\n"
         "/addappt DD/MM/YYYY HH:MM \\<title\\> — Add appointment\n"
         "/appts — List upcoming appointments\n"
         "/delappt \\<id\\> — Delete an appointment\n\n"
         "*Daily Summary:*\n"
-        f"/summary — Send summary now\n"
+        "/summary — Send summary now\n"
         f"/setsummary HH:MM — Change daily summary time \\(currently {summary_time}\\)\n\n"
         "_You'll get a reminder 30 min before each appointment\\._",
         parse_mode="MarkdownV2",
     )
 
 
+GOAL_TYPES = ("short", "long", "5y", "10y", "15y")
+GOAL_TYPE_LABELS = {
+    "short": "short-term",
+    "long": "long-term",
+    "5y": "5-year vision (2030)",
+    "10y": "10-year vision (2035)",
+    "15y": "15-year vision (2040)",
+}
+
+
 @authorized
 async def add_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
-    if len(args) < 2 or args[0] not in ("short", "long"):
-        await update.message.reply_text("Usage: /addgoal short|long <text>")
+    if len(args) < 2 or args[0] not in GOAL_TYPES:
+        await update.message.reply_text(
+            "Usage: /addgoal <type> <text>\n"
+            "Types: short, long, 5y, 10y, 15y"
+        )
         return
     goal_type = args[0]
     text = " ".join(args[1:])
     goal_id = db.add_goal(goal_type, text)
     await update.message.reply_text(
-        f"✅ Goal #{goal_id} added ({goal_type}-term):\n{text}"
+        f"✅ Goal #{goal_id} added ({GOAL_TYPE_LABELS[goal_type]}):\n{text}"
     )
 
 
 @authorized
 async def list_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     goals = db.get_goals()
-    if not goals:
-        await update.message.reply_text("No goals yet. Add one with /addgoal short|long <text>")
+    daily_goals = [g for g in goals if g["type"] in ("short", "long")]
+    if not daily_goals:
+        await update.message.reply_text(
+            "No daily goals yet. Add one with /addgoal short|long <text>\n"
+            "For vision goals use /vision"
+        )
         return
 
-    short_goals = [g for g in goals if g["type"] == "short" and not g["done"]]
-    long_goals = [g for g in goals if g["type"] == "long" and not g["done"]]
-    done_goals = [g for g in goals if g["done"]]
+    short_goals = [g for g in daily_goals if g["type"] == "short" and not g["done"]]
+    long_goals = [g for g in daily_goals if g["type"] == "long" and not g["done"]]
+    done_goals = [g for g in daily_goals if g["done"]]
 
     lines = ["🎯 *Your Goals*\n"]
     if short_goals:
@@ -112,6 +132,33 @@ async def list_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append("*Completed:*")
         for g in done_goals[:5]:
             lines.append(f"  ✓ #{g['id']} {g['text']}")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+@authorized
+async def list_vision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    goals = db.get_goals()
+    vision_goals = [g for g in goals if g["type"] in ("5y", "10y", "15y") and not g["done"]]
+    if not vision_goals:
+        await update.message.reply_text(
+            "No vision goals yet. Add one with /addgoal 5y|10y|15y <text>"
+        )
+        return
+
+    sections = [
+        ("5y", "🏁 *5-Year Vision — 2030*"),
+        ("10y", "🚀 *10-Year Vision — 2035*"),
+        ("15y", "🌟 *15-Year Vision — 2040*"),
+    ]
+    lines = ["🔭 *Your Vision*\n"]
+    for type_key, header in sections:
+        bucket = [g for g in vision_goals if g["type"] == type_key]
+        if bucket:
+            lines.append(header)
+            for g in bucket:
+                lines.append(f"  #{g['id']} {g['text']}")
+            lines.append("")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -271,10 +318,14 @@ async def send_daily_summary(bot: Bot):
     goals = db.get_goals()
     short_goals = [g for g in goals if g["type"] == "short" and not g["done"]]
     long_goals = [g for g in goals if g["type"] == "long" and not g["done"]]
+    vision_5y = [g for g in goals if g["type"] == "5y" and not g["done"]]
+    vision_10y = [g for g in goals if g["type"] == "10y" and not g["done"]]
+    vision_15y = [g for g in goals if g["type"] == "15y" and not g["done"]]
     appts = db.get_appointments_in_range(now, week_end)
 
     lines = [f"☀️ *Good morning, Anton!* — {now.strftime('%A, %d %B %Y')}\n"]
 
+    # Daily goals
     if short_goals or long_goals:
         lines.append("🎯 *Active Goals*")
         if short_goals:
@@ -290,6 +341,17 @@ async def send_daily_summary(bot: Bot):
 
     lines.append("")
 
+    # Vision reminder
+    if vision_5y or vision_10y or vision_15y:
+        lines.append("🔭 *Your Vision*")
+        for label, bucket in [("5y→2030", vision_5y), ("10y→2035", vision_10y), ("15y→2040", vision_15y)]:
+            if bucket:
+                lines.append(f"_({label})_")
+                for g in bucket:
+                    lines.append(f"  • {g['text']}")
+        lines.append("")
+
+    # Appointments
     if appts:
         lines.append("📅 *Upcoming (next 7 days)*")
         for a in appts:
@@ -371,6 +433,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("addgoal", add_goal))
     app.add_handler(CommandHandler("goals", list_goals))
+    app.add_handler(CommandHandler("vision", list_vision))
     app.add_handler(CommandHandler("done", mark_done))
     app.add_handler(CommandHandler("delgoal", delete_goal))
     app.add_handler(CommandHandler("addappt", add_appointment))
