@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
@@ -9,6 +10,8 @@ from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from database import Database
+
+TZ = ZoneInfo("Europe/Amsterdam")
 
 load_dotenv()
 
@@ -151,14 +154,14 @@ async def add_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     try:
-        dt = datetime.strptime(f"{args[0]} {args[1]}", "%d/%m/%Y %H:%M")
+        dt = datetime.strptime(f"{args[0]} {args[1]}", "%d/%m/%Y %H:%M").replace(tzinfo=TZ)
     except ValueError:
         await update.message.reply_text(
             "Invalid date/time. Use: DD/MM/YYYY HH:MM\nExample: 15/04/2025 14:30"
         )
         return
 
-    if dt <= datetime.now():
+    if dt <= datetime.now(TZ):
         await update.message.reply_text("That date is in the past. Please use a future date/time.")
         return
 
@@ -167,7 +170,7 @@ async def add_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Schedule 30-min reminder
     reminder_time = dt - timedelta(minutes=30)
-    if reminder_time > datetime.now():
+    if reminder_time > datetime.now(TZ):
         scheduler.add_job(
             send_reminder,
             "date",
@@ -197,7 +200,7 @@ async def list_appointments(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = ["📅 *Upcoming Appointments*\n"]
     for a in appts:
-        dt = datetime.fromisoformat(a["datetime"])
+        dt = datetime.fromisoformat(a["datetime"]).replace(tzinfo=TZ)
         lines.append(f"*#{a['id']}* {a['title']}")
         lines.append(f"   {dt.strftime('%d/%m/%Y at %H:%M')}\n")
 
@@ -241,9 +244,9 @@ async def post_init(application: Application):
     appts = db.get_upcoming_appointments()
     rescheduled = 0
     for a in appts:
-        dt = datetime.fromisoformat(a["datetime"])
+        dt = datetime.fromisoformat(a["datetime"]).replace(tzinfo=TZ)
         reminder_time = dt - timedelta(minutes=30)
-        if reminder_time > datetime.now():
+        if reminder_time > datetime.now(TZ):
             scheduler.add_job(
                 send_reminder,
                 "date",
